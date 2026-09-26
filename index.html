@@ -1,0 +1,1652 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>棋局網路節點圖</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: light-dark(#f5f2eb, #111411);
+      --panel: light-dark(#fffdf8, #1a1f1a);
+      --panel-2: light-dark(#ece7dc, #252b25);
+      --text: light-dark(#1d211d, #f0f3ee);
+      --muted: light-dark(#6b716a, #aab3aa);
+      --line: light-dark(#a6ada3, #566056);
+      --border: light-dark(#d7d2c7, #343c34);
+      --accent: light-dark(#2f6e49, #74c995);
+      --accent-soft: light-dark(#e0eee5, #213d2c);
+      --light-square: light-dark(#e8dfcc, #cbbfa6);
+      --dark-square: light-dark(#76936f, #5c7958);
+      --last-square: light-dark(#f1ce72, #c19b42);
+      --shadow: 0 14px 40px light-dark(rgba(35, 45, 35, .10), rgba(0, 0, 0, .32));
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 15% 0%, light-dark(rgba(255,255,255,.9), rgba(74,101,76,.13)), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+    }
+
+    button { font: inherit; }
+
+    .app {
+      width: min(1500px, 100%);
+      margin: 0 auto;
+      padding: 28px clamp(14px, 3vw, 42px) 36px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 7px;
+      font-size: clamp(25px, 3vw, 38px);
+      font-weight: 650;
+      letter-spacing: -.035em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: end;
+    }
+
+    .tool-button, .branch-button {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: var(--panel);
+      border-radius: 10px;
+      min-height: 38px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    .tool-button:hover, .branch-button:hover { background: var(--panel-2); }
+    .tool-button:disabled, .branch-button:disabled { opacity: .58; cursor: default; }
+    .tool-button:focus-visible, .branch-button:focus-visible, .node:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      outline-offset: 2px;
+    }
+
+    .zoom-value {
+      min-width: 50px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .selection {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      padding: 14px 16px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px light-dark(rgba(35,45,35,.06), rgba(0,0,0,.2));
+      margin-bottom: 12px;
+    }
+
+    .selection-main { min-width: 0; }
+
+    .selection-actions {
+      display: flex;
+      align-items: center;
+      justify-content: end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 3px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .selection-title {
+      font-size: 18px;
+      font-weight: 650;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .selection-path {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .material-summary {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px 18px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+
+    .capture-item {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .capture-label { color: var(--muted); }
+    .capture-pieces { font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", serif; }
+    .capture-score {
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .material-balance {
+      padding-left: 18px;
+      border-left: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .branch-button[hidden] { display: none; }
+
+    .viewport {
+      position: relative;
+      height: min(690px, calc(100vh - 310px));
+      min-height: 440px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background-color: var(--panel);
+      background-image:
+        linear-gradient(to right, color-mix(in srgb, var(--border) 42%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in srgb, var(--border) 42%, transparent) 1px, transparent 1px);
+      background-size: 26px 26px;
+      box-shadow: var(--shadow);
+      touch-action: none;
+      user-select: none;
+      cursor: grab;
+    }
+
+    .viewport.is-dragging { cursor: grabbing; }
+    .viewport.is-interacting .links { opacity: 0; }
+    .viewport[data-lod="overview"] .node-heading,
+    .viewport[data-lod="overview"] .node-footer { visibility: hidden; }
+    .viewport[data-lod="overview"] .node { box-shadow: none; }
+
+    .scene {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    .links, .nodes {
+      position: absolute;
+      left: 0;
+      top: 0;
+      overflow: visible;
+    }
+
+    .link {
+      fill: none;
+      stroke: color-mix(in srgb, var(--line) 72%, var(--text));
+      stroke-width: 2.4;
+      opacity: .9;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .link.is-active {
+      stroke: var(--accent);
+      stroke-width: 3.2;
+      opacity: 1;
+    }
+
+    .ring-guide {
+      fill: none;
+      stroke: color-mix(in srgb, var(--accent) 34%, var(--border));
+      stroke-width: 1.5;
+      stroke-dasharray: 10 14;
+      opacity: .55;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+
+    .node {
+      position: absolute;
+      width: 100px;
+      height: 100px;
+      padding: 5px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 8px 22px light-dark(rgba(37,48,37,.12), rgba(0,0,0,.3));
+      cursor: pointer;
+      text-align: left;
+      touch-action: none;
+      will-change: transform;
+      contain: layout paint style;
+      transition: border-color .16s ease, box-shadow .16s ease;
+    }
+
+    .node:hover { z-index: 2; }
+    .node.is-dragging { z-index: 3; }
+    .node.is-selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent), 0 12px 28px light-dark(rgba(37,48,37,.16), rgba(0,0,0,.38));
+    }
+    .node.is-root {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent), 0 0 0 8px color-mix(in srgb, var(--accent) 20%, transparent), 0 0 38px color-mix(in srgb, var(--accent) 38%, transparent);
+      z-index: 4;
+    }
+
+    .node-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .node-name {
+      font-size: 13px;
+      font-weight: 650;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .node-ply {
+      color: var(--muted);
+      font-size: 11px;
+      flex: 0 0 auto;
+    }
+
+    .board {
+      display: block;
+      width: 88px;
+      height: 88px;
+      margin-inline: auto;
+      aspect-ratio: 1;
+      overflow: hidden;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, var(--text) 16%, transparent);
+    }
+
+    .square {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      aspect-ratio: 1;
+      background: var(--light-square);
+      color: #111;
+      font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", serif;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .square.dark { background: var(--dark-square); }
+    .square.last { background: var(--last-square); }
+
+    .node-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .node-move { color: var(--accent); font-weight: 650; }
+
+    .hint {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 18px;
+      margin: 12px 4px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .hint span::before { content: "·"; margin-right: 7px; color: var(--accent); }
+
+    @media (max-width: 720px) {
+      .app { padding-top: 18px; }
+      .topbar { align-items: start; flex-direction: column; }
+      .toolbar { justify-content: start; }
+      .selection { grid-template-columns: 1fr; gap: 10px; }
+      .selection-actions { justify-content: stretch; }
+      .branch-button { width: 100%; }
+      .selection-actions .tool-button { flex: 1 1 auto; }
+      .material-balance { width: 100%; padding-left: 0; border-left: 0; }
+      .viewport { height: 560px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .node { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <h1>棋局網路節點圖</h1>
+        <p class="subtitle">初始棋盤位於中心；每多走一步就向外增加一圈，同圈節點會自動推擠避免重疊。</p>
+      </div>
+      <div class="toolbar" aria-label="檢視控制">
+        <button class="tool-button" id="zoomOut" type="button" aria-label="縮小">−</button>
+        <span class="zoom-value" id="zoomValue">100%</span>
+        <button class="tool-button" id="zoomIn" type="button" aria-label="放大">＋</button>
+        <button class="tool-button" id="expandFrontier" type="button">批次擴展前沿</button>
+        <button class="tool-button" id="fitView" type="button">顯示全圖</button>
+      </div>
+    </header>
+
+    <section class="selection" aria-live="polite">
+      <div class="selection-main">
+        <div class="eyebrow">目前局面</div>
+        <div class="selection-title" id="selectionTitle">初始局面</div>
+        <div class="selection-path" id="selectionPath">尚未走子</div>
+        <div class="material-summary" aria-label="吃子與子力得分">
+          <div class="capture-item">
+            <span class="capture-label">白方吃子</span>
+            <span class="capture-pieces" id="whiteCaptures">尚未吃子</span>
+            <span class="capture-score" id="whiteScore">0 分</span>
+          </div>
+          <div class="capture-item">
+            <span class="capture-label">黑方吃子</span>
+            <span class="capture-pieces" id="blackCaptures">尚未吃子</span>
+            <span class="capture-score" id="blackScore">0 分</span>
+          </div>
+          <div class="material-balance" id="materialBalance">子力平衡</div>
+        </div>
+      </div>
+      <div class="selection-actions">
+        <button class="tool-button" id="previousNode" type="button">同圈上一個</button>
+        <button class="tool-button" id="nextNode" type="button">同圈下一個</button>
+        <button class="tool-button" id="previousRing" type="button" disabled>已在中心</button>
+        <button class="tool-button" id="nextRing" type="button">前往第一圈</button>
+        <button class="branch-button" id="toggleBranch" type="button">產生全部相鄰局面</button>
+      </div>
+    </section>
+
+    <section class="viewport" id="viewport" aria-label="可拖曳及縮放的棋局狀態圖">
+      <div class="scene" id="scene">
+        <svg class="links" id="links" aria-hidden="true"></svg>
+        <div class="nodes" id="nodes"></div>
+      </div>
+    </section>
+
+    <div class="hint" aria-label="操作提示">
+      <span>拖曳空白處移動畫布</span>
+      <span>外圈節點可沿圓周拖曳，順序固定</span>
+      <span>滾輪縮放</span>
+      <span>方形節點代表棋盤局面</span>
+      <span>第一圈為 1 步，第二圈為 2 步</span>
+      <span>點擊節點查看路徑</span>
+      <span>相同棋盤狀態會合併並重新連線</span>
+    </div>
+  </main>
+
+  <script type="text/plain" id="legacy-tree-code">
+    import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm";
+
+    const files = "abcdefgh";
+    const pieces = {
+      r: "♜", n: "♞", b: "♝", q: "♛", k: "♚", p: "♟",
+      R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔", P: "♙"
+    };
+
+    let idSequence = 0;
+    const startChess = new Chess();
+    const tree = {
+      id: "root",
+      name: "初始局面",
+      move: "起點",
+      san: null,
+      fen: startChess.fen(),
+      path: [],
+      depth: 0,
+      parent: null,
+      children: null,
+      legalCount: startChess.moves().length
+    };
+
+    const viewport = document.getElementById("viewport");
+    const scene = document.getElementById("scene");
+    const nodesLayer = document.getElementById("nodes");
+    const linksSvg = document.getElementById("links");
+    const selectionTitle = document.getElementById("selectionTitle");
+    const selectionPath = document.getElementById("selectionPath");
+    const whiteCaptures = document.getElementById("whiteCaptures");
+    const blackCaptures = document.getElementById("blackCaptures");
+    const whiteScore = document.getElementById("whiteScore");
+    const blackScore = document.getElementById("blackScore");
+    const materialBalance = document.getElementById("materialBalance");
+    const nextRingButton = document.getElementById("nextRing");
+    const toggleBranch = document.getElementById("toggleBranch");
+    const zoomValue = document.getElementById("zoomValue");
+
+    const nodeWidth = 150;
+    const nodeHeight = 191;
+    const columnGap = 245;
+    const rowGap = 30;
+    const collapsed = new Set();
+    let selected = tree;
+    let scale = 1;
+    let translateX = 30;
+    let translateY = 30;
+    let drag = null;
+    let bounds = { width: 1, height: 1 };
+
+    function moveLabel(parent, san) {
+      const moveNumber = Math.floor(parent.depth / 2) + 1;
+      return parent.depth % 2 === 0 ? `${moveNumber}. ${san}` : `${moveNumber}... ${san}`;
+    }
+
+    function boardFromFen(fen) {
+      const chess = new Chess(fen);
+      return chess.board().map(row => row.map(piece => {
+        if (!piece) return "";
+        return piece.color === "w" ? piece.type.toUpperCase() : piece.type;
+      }));
+    }
+
+    function generateChildren(node) {
+      if (node.children !== null) return;
+      const chess = new Chess(node.fen);
+      const moves = chess.moves({ verbose: true });
+      node.children = moves.map(move => {
+        const next = new Chess(node.fen);
+        next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+        const label = moveLabel(node, move.san);
+        return {
+          id: `state-${++idSequence}`,
+          name: label,
+          move: move.san,
+          san: move.san,
+          fen: next.fen(),
+          path: [...node.path, label],
+          depth: node.depth + 1,
+          parent: node,
+          children: null,
+          legalCount: next.moves().length,
+          last: [move.from, move.to]
+        };
+      });
+      node.legalCount = moves.length;
+    }
+
+    function squarePosition(square) {
+      return { row: 8 - Number(square[1]), col: files.indexOf(square[0]) };
+    }
+
+    function visibleChildren(node) {
+      return collapsed.has(node.id) ? [] : (node.children || []);
+    }
+
+    function layoutTree() {
+      let nextY = 0;
+      let maxDepth = 0;
+      const visible = [];
+
+      function visit(node) {
+        visible.push(node);
+        maxDepth = Math.max(maxDepth, node.depth);
+        const children = visibleChildren(node);
+        if (!children.length) {
+          node.y = nextY;
+          nextY += nodeHeight + rowGap;
+        } else {
+          children.forEach(visit);
+          node.y = (children[0].y + children[children.length - 1].y) / 2;
+        }
+        node.x = node.depth * columnGap;
+      }
+
+      visit(tree);
+      bounds = {
+        width: maxDepth * columnGap + nodeWidth,
+        height: Math.max(nodeHeight, nextY - rowGap)
+      };
+      return visible;
+    }
+
+    function boardMarkup(node) {
+      let html = "";
+      const board = boardFromFen(node.fen);
+      const lastPositions = (node.last || []).map(squarePosition);
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const isDark = (row + col) % 2 === 1;
+          const isLast = lastPositions.some(p => p.row === row && p.col === col);
+          const label = `${files[col]}${8 - row}`;
+          html += `<span class="square${isDark ? " dark" : ""}${isLast ? " last" : ""}" aria-label="${label} ${board[row][col] || "空格"}">${pieces[board[row][col]] || ""}</span>`;
+        }
+      }
+      return html;
+    }
+
+    function render() {
+      const visible = layoutTree();
+      nodesLayer.innerHTML = "";
+      linksSvg.innerHTML = "";
+      nodesLayer.style.width = `${bounds.width}px`;
+      nodesLayer.style.height = `${bounds.height}px`;
+      linksSvg.setAttribute("width", bounds.width);
+      linksSvg.setAttribute("height", bounds.height);
+      linksSvg.setAttribute("viewBox", `0 0 ${bounds.width} ${bounds.height}`);
+
+      visible.forEach(node => {
+        if (node.parent && visible.includes(node.parent)) {
+          const x1 = node.parent.x + nodeWidth;
+          const y1 = node.parent.y + nodeHeight / 2;
+          const x2 = node.x;
+          const y2 = node.y + nodeHeight / 2;
+          const mid = (x1 + x2) / 2;
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("class", "link");
+          path.setAttribute("d", `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
+          linksSvg.appendChild(path);
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `node${node === selected ? " is-selected" : ""}`;
+        button.style.left = `${node.x}px`;
+        button.style.top = `${node.y}px`;
+        button.setAttribute("aria-label", `${node.name}，${node.move}`);
+        const childCount = node.children ? node.children.length : node.legalCount;
+        const state = node.legalCount === 0
+          ? "終局"
+          : node.children === null
+            ? `${node.legalCount} 種合法走法`
+            : collapsed.has(node.id) ? `＋${childCount}` : `${childCount} 分支`;
+        button.innerHTML = `
+          <span class="node-heading">
+            <span class="node-name">${node.name}</span>
+            <span class="node-ply">${node.depth === 0 ? "根節點" : `${node.depth} ply`}</span>
+          </span>
+          <span class="board" role="img" aria-label="${node.name}的棋盤局面">${boardMarkup(node)}</span>
+          <span class="node-footer"><span class="node-move">${node.move}</span><span>${state}</span></span>`;
+        button.addEventListener("click", event => {
+          event.stopPropagation();
+          selectNode(node);
+        });
+        nodesLayer.appendChild(button);
+      });
+
+      updateTransform();
+    }
+
+    function selectNode(node) {
+      selected = node;
+      selectionTitle.textContent = node.name;
+      selectionPath.textContent = node.path.length ? node.path.join("  →  ") : "尚未走子";
+      toggleBranch.hidden = node.legalCount === 0;
+      if (node.legalCount > 0) {
+        toggleBranch.textContent = node.children === null
+          ? `產生全部 ${node.legalCount} 個合法下一步`
+          : collapsed.has(node.id) ? `展開 ${node.children.length} 個子分支` : `收合 ${node.children.length} 個子分支`;
+      }
+      document.querySelectorAll(".node").forEach((element, index) => {
+        element.classList.toggle("is-selected", layoutTree()[index] === selected);
+      });
+    }
+
+    function updateTransform() {
+      scene.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      zoomValue.textContent = `${Math.round(scale * 100)}%`;
+    }
+
+    function fitView() {
+      const padding = 34;
+      const availableWidth = Math.max(100, viewport.clientWidth - padding * 2);
+      const availableHeight = Math.max(100, viewport.clientHeight - padding * 2);
+      scale = Math.min(1, availableWidth / bounds.width, availableHeight / bounds.height);
+      scale = Math.max(.12, scale);
+      translateX = (viewport.clientWidth - bounds.width * scale) / 2;
+      translateY = (viewport.clientHeight - bounds.height * scale) / 2;
+      updateTransform();
+    }
+
+    function zoomAt(nextScale, clientX, clientY) {
+      const rect = viewport.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const worldX = (x - translateX) / scale;
+      const worldY = (y - translateY) / scale;
+      scale = Math.max(.12, Math.min(1.8, nextScale));
+      translateX = x - worldX * scale;
+      translateY = y - worldY * scale;
+      updateTransform();
+    }
+
+    toggleBranch.addEventListener("click", () => {
+      if (selected.legalCount === 0) return;
+      if (selected.children === null) {
+        generateChildren(selected);
+        collapsed.delete(selected.id);
+      } else if (collapsed.has(selected.id)) {
+        collapsed.delete(selected.id);
+      } else {
+        collapsed.add(selected.id);
+      }
+      render();
+      selectNode(selected);
+      fitView();
+    });
+
+    document.getElementById("zoomIn").addEventListener("click", () => {
+      const r = viewport.getBoundingClientRect();
+      zoomAt(scale * 1.16, r.left + r.width / 2, r.top + r.height / 2);
+    });
+    document.getElementById("zoomOut").addEventListener("click", () => {
+      const r = viewport.getBoundingClientRect();
+      zoomAt(scale / 1.16, r.left + r.width / 2, r.top + r.height / 2);
+    });
+    document.getElementById("fitView").addEventListener("click", fitView);
+
+    viewport.addEventListener("wheel", event => {
+      event.preventDefault();
+      zoomAt(scale * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY);
+    }, { passive: false });
+
+    viewport.addEventListener("pointerdown", event => {
+      if (event.target.closest(".node")) return;
+      drag = { x: event.clientX, y: event.clientY, tx: translateX, ty: translateY };
+      viewport.setPointerCapture(event.pointerId);
+      viewport.classList.add("is-dragging");
+    });
+
+    viewport.addEventListener("pointermove", event => {
+      if (!drag) return;
+      translateX = drag.tx + event.clientX - drag.x;
+      translateY = drag.ty + event.clientY - drag.y;
+      updateTransform();
+    });
+
+    function stopDrag() {
+      drag = null;
+      viewport.classList.remove("is-dragging");
+    }
+    viewport.addEventListener("pointerup", stopDrag);
+    viewport.addEventListener("pointercancel", stopDrag);
+
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(fitView, 100);
+    });
+
+    generateChildren(tree);
+    render();
+    selectNode(tree);
+    requestAnimationFrame(() => focusNode(root, .34));
+  </script>
+  <script type="module">
+    import { Chess } from "https://cdn.jsdelivr.net/npm/chess.js@1.4.0/+esm";
+    import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7.9.0/+esm";
+
+    const files = "abcdefgh";
+    const pieces = {
+      r: "♜", n: "♞", b: "♝", q: "♛", k: "♚", p: "♟",
+      R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔", P: "♙"
+    };
+    const nodeWidth = 100;
+    const nodeHeight = 100;
+    const graphNodes = [];
+    const graphEdges = [];
+    const stateIndex = new Map();
+    const edgeIndex = new Set();
+    const nodeElements = new Map();
+    const canvasElements = new Map();
+    const edgeElements = new Map();
+    const ringElements = new Map();
+    const ringRadii = new Map();
+    let nodeSequence = 0;
+    let edgeSequence = 0;
+    let selected;
+    let selectedParentId = null;
+    let scale = 1;
+    let translateX = 0;
+    let translateY = 0;
+    let drag = null;
+    let busy = false;
+    let simulation = null;
+    let nodeDrag = null;
+    let simulationTick = 0;
+    let visibilityFrame = 0;
+    let visibilityInitialized = false;
+    let visibleNodeIds = new Set();
+    let visibleEdgeIds = new Set();
+    let visibleNodes = [];
+    let visibleEdges = [];
+    let interactionTimer = 0;
+    let viewAnimation = 0;
+    const colorScheme = matchMedia("(prefers-color-scheme: dark)");
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+    const viewport = document.getElementById("viewport");
+    const scene = document.getElementById("scene");
+    const nodesLayer = document.getElementById("nodes");
+    const linksSvg = document.getElementById("links");
+    const selectionTitle = document.getElementById("selectionTitle");
+    const selectionPath = document.getElementById("selectionPath");
+    const whiteCaptures = document.getElementById("whiteCaptures");
+    const blackCaptures = document.getElementById("blackCaptures");
+    const whiteScore = document.getElementById("whiteScore");
+    const blackScore = document.getElementById("blackScore");
+    const materialBalance = document.getElementById("materialBalance");
+    const previousNodeButton = document.getElementById("previousNode");
+    const nextNodeButton = document.getElementById("nextNode");
+    const previousRingButton = document.getElementById("previousRing");
+    const nextRingButton = document.getElementById("nextRing");
+    const toggleBranch = document.getElementById("toggleBranch");
+    const expandFrontierButton = document.getElementById("expandFrontier");
+    const zoomValue = document.getElementById("zoomValue");
+
+    function stateKey(fen) {
+      return fen.split(" ").slice(0, 4).join(" ");
+    }
+
+    function moveLabel(parent, san) {
+      const number = Math.floor(parent.depth / 2) + 1;
+      return parent.depth % 2 === 0 ? `${number}. ${san}` : `${number}... ${san}`;
+    }
+
+    function boardFromFen(fen) {
+      return new Chess(fen).board().map(row => row.map(piece => {
+        if (!piece) return "";
+        return piece.color === "w" ? piece.type.toUpperCase() : piece.type;
+      }));
+    }
+
+    const initialPieceCounts = { p: 8, n: 2, b: 2, r: 2, q: 1 };
+    const materialValues = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+    const captureOrder = ["q", "r", "b", "n", "p"];
+
+    function getMaterialSummary(node) {
+      const remaining = {
+        w: { p: 0, n: 0, b: 0, r: 0, q: 0 },
+        b: { p: 0, n: 0, b: 0, r: 0, q: 0 }
+      };
+      node.board.flat().forEach(piece => {
+        if (!piece) return;
+        const type = piece.toLowerCase();
+        if (!(type in materialValues)) return;
+        remaining[piece === piece.toUpperCase() ? "w" : "b"][type]++;
+      });
+
+      const takenByWhite = {};
+      const takenByBlack = {};
+      let whitePoints = 0;
+      let blackPoints = 0;
+      captureOrder.forEach(type => {
+        takenByWhite[type] = Math.max(0, initialPieceCounts[type] - remaining.b[type]);
+        takenByBlack[type] = Math.max(0, initialPieceCounts[type] - remaining.w[type]);
+        whitePoints += takenByWhite[type] * materialValues[type];
+        blackPoints += takenByBlack[type] * materialValues[type];
+      });
+      return { takenByWhite, takenByBlack, whitePoints, blackPoints };
+    }
+
+    function formatCaptured(counts, color) {
+      const labels = captureOrder
+        .filter(type => counts[type] > 0)
+        .map(type => `${pieces[color === "b" ? type : type.toUpperCase()]}×${counts[type]}`);
+      return labels.length ? labels.join("　") : "尚未吃子";
+    }
+
+    function angularDistance(a, b) {
+      return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    }
+
+    function createNode({ fen, name, move, path, depth, last, parentId = null, branchIndex = null, siblingOrder = 0, x = 0, y = 0 }) {
+      const chess = new Chess(fen);
+      const board = chess.board().map(row => row.map(piece => {
+        if (!piece) return "";
+        return piece.color === "w" ? piece.type.toUpperCase() : piece.type;
+      }));
+      const node = {
+        id: `position-${++nodeSequence}`,
+        fen,
+        name,
+        move,
+        path,
+        depth,
+        last: last || [],
+        board,
+        legalCount: chess.moves().length,
+        expanded: false,
+        outgoing: 0,
+        arrivals: 1,
+        layoutParentId: parentId,
+        branchIndex,
+        siblingOrder,
+        anchorX: x,
+        anchorY: y,
+        x,
+        y,
+        ringInitialized: false,
+        ringRadius: depth === 0 ? 0 : depth * 650,
+        ringAngle: 0,
+        targetX: x,
+        targetY: y
+      };
+      graphNodes.push(node);
+      stateIndex.set(stateKey(fen), node);
+      return node;
+    }
+
+    function generateConnections(node) {
+      if (node.expanded || node.legalCount === 0) return { added: 0, connected: 0 };
+      const chess = new Chess(node.fen);
+      const moves = chess.moves({ verbose: true });
+      let added = 0;
+      let connected = 0;
+
+      moves.forEach((move, index) => {
+        chess.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+        const fen = chess.fen();
+        chess.undo();
+        const key = stateKey(fen);
+        const label = moveLabel(node, move.san);
+        let target = stateIndex.get(key);
+
+        if (!target) {
+          const angle = (Math.PI * 2 * index / Math.max(1, moves.length)) + node.depth * .77;
+          const provisionalRadius = (node.depth + 1) * 650;
+          target = createNode({
+            fen,
+            name: label,
+            move: move.san,
+            path: [...node.path, label],
+            depth: node.depth + 1,
+            last: [move.from, move.to],
+            parentId: node.id,
+            branchIndex: node.depth === 0 ? index : node.branchIndex,
+            siblingOrder: index,
+            x: Math.cos(angle) * provisionalRadius,
+            y: Math.sin(angle) * provisionalRadius
+          });
+          added++;
+        } else {
+          target.arrivals++;
+          connected++;
+        }
+
+        const edgeKey = `${node.id}|${target.id}|${move.san}`;
+        if (!edgeIndex.has(edgeKey)) {
+          edgeIndex.add(edgeKey);
+          graphEdges.push({
+            id: `edge-${++edgeSequence}`,
+            source: node,
+            target,
+            san: move.san
+          });
+        }
+      });
+
+      node.expanded = true;
+      node.outgoing = moves.length;
+      return { added, connected };
+    }
+
+    function squarePosition(square) {
+      return { row: 8 - Number(square[1]), col: files.indexOf(square[0]) };
+    }
+
+    function drawBoard(canvas, node, resolution = 132) {
+      const safeResolution = Math.max(132, Math.min(768, Math.round(resolution / 8) * 8));
+      if (canvas.width !== safeResolution || canvas.height !== safeResolution) {
+        canvas.width = safeResolution;
+        canvas.height = safeResolution;
+      }
+      const context = canvas.getContext("2d", { alpha: false });
+      const size = canvas.width;
+      const cell = size / 8;
+      const darkMode = colorScheme.matches;
+      const colors = darkMode
+        ? { light: "#cbbfa6", dark: "#5c7958", last: "#c19b42" }
+        : { light: "#e8dfcc", dark: "#76936f", last: "#f1ce72" };
+      const last = node.last.map(squarePosition);
+
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.font = `500 ${cell * .82}px "Segoe UI Symbol", "Noto Sans Symbols 2", serif`;
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const moved = last.some(position => position.row === row && position.col === col);
+          context.fillStyle = moved ? colors.last : (row + col) % 2 ? colors.dark : colors.light;
+          context.fillRect(col * cell, row * cell, cell, cell);
+          const piece = node.board[row][col];
+          if (!piece) continue;
+          const isWhite = piece === piece.toUpperCase();
+          context.lineWidth = Math.max(1, cell * .035);
+          context.strokeStyle = isWhite ? "#20241f" : "#e9ede7";
+          context.fillStyle = isWhite ? "#f7f4eb" : "#171a17";
+          context.strokeText(pieces[piece], (col + .5) * cell, (row + .53) * cell);
+          context.fillText(pieces[piece], (col + .5) * cell, (row + .53) * cell);
+        }
+      }
+      canvas.dataset.rendered = "true";
+    }
+
+    function updateRingGeometry() {
+      const levels = new Map();
+      graphNodes.forEach(node => {
+        if (!levels.has(node.depth)) levels.set(node.depth, []);
+        levels.get(node.depth).push(node);
+      });
+
+      ringRadii.clear();
+      ringRadii.set(0, 0);
+      let previousRadius = 0;
+      const minimumArc = 168;
+      const ringGap = 650;
+      const firstRing = (levels.get(1) || []).sort((a, b) => a.branchIndex - b.branchIndex);
+      const branchCount = Math.max(1, firstRing.length);
+      const branchSector = Math.PI * 2 / branchCount;
+      const usableBranchSector = branchSector * .84;
+      const nodeById = new Map(graphNodes.map(node => [node.id, node]));
+
+      function placeNode(node, radius, angle) {
+        node.ringRadius = radius;
+        node.ringAngle = angle;
+        node.targetX = Math.cos(angle) * radius;
+        node.targetY = Math.sin(angle) * radius;
+        if (!node.ringInitialized) {
+          node.x = node.targetX;
+          node.y = node.targetY;
+          node.ringInitialized = true;
+        }
+      }
+
+      [...levels.keys()].sort((a, b) => a - b).forEach(depth => {
+        const levelNodes = levels.get(depth);
+        if (depth === 0) {
+          const rootNode = levelNodes[0];
+          rootNode.ringRadius = 0;
+          rootNode.ringAngle = 0;
+          rootNode.targetX = 0;
+          rootNode.targetY = 0;
+          rootNode.x = 0;
+          rootNode.y = 0;
+          rootNode.fx = 0;
+          rootNode.fy = 0;
+          rootNode.ringInitialized = true;
+          return;
+        }
+
+        if (depth === 1) {
+          const radius = Math.max(previousRadius + ringGap, levelNodes.length * minimumArc / (Math.PI * 2));
+          ringRadii.set(depth, radius);
+          previousRadius = radius;
+          firstRing.forEach((node, index) => {
+            const angle = -Math.PI / 2 + Math.PI * 2 * index / branchCount;
+            placeNode(node, radius, angle);
+          });
+          return;
+        }
+
+        const branches = new Map();
+        levelNodes.forEach(node => {
+          const branch = Number.isInteger(node.branchIndex) ? node.branchIndex : 0;
+          if (!branches.has(branch)) branches.set(branch, []);
+          branches.get(branch).push(node);
+        });
+        const largestBranch = Math.max(...[...branches.values()].map(nodes => nodes.length));
+        const branchRadius = largestBranch * minimumArc / usableBranchSector;
+        const circumferenceRadius = levelNodes.length * minimumArc / (Math.PI * 2);
+        const radius = Math.max(previousRadius + ringGap, branchRadius, circumferenceRadius);
+        ringRadii.set(depth, radius);
+        previousRadius = radius;
+
+        branches.forEach((branchNodes, branch) => {
+          branchNodes.sort((a, b) => {
+            const parentA = nodeById.get(a.layoutParentId);
+            const parentB = nodeById.get(b.layoutParentId);
+            const parentDifference = (parentA?.ringAngle ?? 0) - (parentB?.ringAngle ?? 0);
+            return parentDifference || a.siblingOrder - b.siblingOrder || a.id.localeCompare(b.id, undefined, { numeric: true });
+          });
+          const centerAngle = -Math.PI / 2 + Math.PI * 2 * branch / branchCount;
+          branchNodes.forEach((node, index) => {
+            const offset = branchNodes.length === 1
+              ? 0
+              : -usableBranchSector / 2 + usableBranchSector * (index + .5) / branchNodes.length;
+            placeNode(node, radius, centerAngle + offset);
+          });
+        });
+      });
+    }
+
+    function renderRingGuides() {
+      ringRadii.forEach((radius, depth) => {
+        if (depth === 0) return;
+        let circle = ringElements.get(depth);
+        if (!circle) {
+          circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          circle.setAttribute("class", "ring-guide");
+          circle.setAttribute("cx", "0");
+          circle.setAttribute("cy", "0");
+          linksSvg.insertBefore(circle, linksSvg.firstChild);
+          ringElements.set(depth, circle);
+        }
+        circle.setAttribute("r", radius);
+      });
+    }
+
+    function renderGraph() {
+      graphEdges.forEach(edge => {
+        if (edgeElements.has(edge.id)) return;
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("class", "link");
+        path.style.display = "none";
+        linksSvg.appendChild(path);
+        edgeElements.set(edge.id, path);
+      });
+
+      graphNodes.forEach(node => {
+        let button = nodeElements.get(node.id);
+        if (!button) {
+          button = document.createElement("button");
+          button.type = "button";
+          button.className = `node${node.depth === 0 ? " is-root" : ""}${node === selected ? " is-selected" : ""}`;
+          button.style.display = "none";
+          button.setAttribute("aria-label", `${node.name}，${node.legalCount} 種合法下一步`);
+          button.innerHTML = `<canvas class="board" width="132" height="132" role="img" aria-label="${node.name}的棋盤局面"></canvas>`;
+          const canvas = button.querySelector("canvas");
+          canvas.dataset.rendered = "false";
+          canvasElements.set(node.id, canvas);
+          button.addEventListener("pointerdown", event => startNodeDrag(event, node, button));
+          button.addEventListener("pointermove", moveNodeDrag);
+          button.addEventListener("pointerup", endNodeDrag);
+          button.addEventListener("pointercancel", endNodeDrag);
+          button.addEventListener("click", event => {
+            if (event.detail === 0) selectNode(node);
+          });
+          nodesLayer.appendChild(button);
+          nodeElements.set(node.id, button);
+        }
+      });
+      updatePositions();
+    }
+
+    function updateNodePosition(node) {
+      const element = nodeElements.get(node.id);
+      if (!element) return;
+      element.style.transform = `translate3d(${node.x - nodeWidth / 2}px, ${node.y - nodeHeight / 2}px, 0)`;
+    }
+
+    function updateEdgePosition(edge) {
+      const element = edgeElements.get(edge.id);
+      if (!element) return;
+        const sx = edge.source.x;
+        const sy = edge.source.y;
+        const tx = edge.target.x;
+        const ty = edge.target.y;
+        const dx = tx - sx;
+        const dy = ty - sy;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const trim = 60;
+        const x1 = sx + dx / length * trim;
+        const y1 = sy + dy / length * trim;
+        const x2 = tx - dx / length * trim;
+        const y2 = ty - dy / length * trim;
+        element.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
+    }
+
+    function updatePositions() {
+      if (visibilityInitialized) {
+        visibleNodes.forEach(updateNodePosition);
+        visibleEdges.forEach(updateEdgePosition);
+      } else {
+        graphNodes.forEach(updateNodePosition);
+        graphEdges.forEach(updateEdgePosition);
+      }
+      if (++simulationTick % 10 === 0) scheduleVisibilityUpdate();
+    }
+
+    function restartSimulation(alpha = 1) {
+      updateRingGeometry();
+      renderRingGuides();
+      const collisionRadius = Math.hypot(nodeWidth, nodeHeight) / 2 + 10;
+      const linkDistance = edge => Math.max(260, Math.abs(edge.target.ringRadius - edge.source.ringRadius));
+      const ringX = node => node.targetX;
+      const ringY = node => node.targetY;
+
+      if (!simulation) {
+        simulation = d3.forceSimulation(graphNodes)
+          .alphaDecay(.028)
+          .velocityDecay(.38)
+          .force("link", d3.forceLink(graphEdges).id(node => node.id).distance(linkDistance).strength(.018))
+          .force("charge", d3.forceManyBody().strength(-260).distanceMin(90).distanceMax(620).theta(.9))
+          .force("collision", d3.forceCollide(collisionRadius).strength(1).iterations(3))
+          .force("radial", d3.forceRadial(node => node.ringRadius, 0, 0).strength(node => node.depth === 0 ? 1 : .92))
+          .force("x", d3.forceX(ringX).strength(node => node.depth === 0 ? 1 : .22))
+          .force("y", d3.forceY(ringY).strength(node => node.depth === 0 ? 1 : .22))
+          .on("tick", updatePositions);
+      } else {
+        simulation.nodes(graphNodes);
+        simulation.force("link").links(graphEdges).distance(linkDistance);
+        simulation.force("collision").radius(collisionRadius);
+        simulation.force("radial").radius(node => node.ringRadius);
+        simulation.force("x").x(ringX);
+        simulation.force("y").y(ringY);
+      }
+      updatePositions();
+      simulation.alpha(Math.max(alpha, simulation.alpha())).restart();
+    }
+
+    function unwrapAngle(angle, reference) {
+      while (angle - reference > Math.PI) angle -= Math.PI * 2;
+      while (angle - reference < -Math.PI) angle += Math.PI * 2;
+      return angle;
+    }
+
+    function getDragAngleBounds(node) {
+      const peers = graphNodes
+        .filter(candidate => candidate.depth === node.depth)
+        .sort((a, b) => {
+          const angleA = (a.ringAngle + Math.PI * 2) % (Math.PI * 2);
+          const angleB = (b.ringAngle + Math.PI * 2) % (Math.PI * 2);
+          return angleA - angleB;
+        });
+      if (peers.length <= 1) return { min: node.ringAngle - .12, max: node.ringAngle + .12 };
+
+      const index = peers.indexOf(node);
+      const current = node.ringAngle;
+      let previous = unwrapAngle(peers[(index - 1 + peers.length) % peers.length].ringAngle, current);
+      let next = unwrapAngle(peers[(index + 1) % peers.length].ringAngle, current);
+      if (previous >= current) previous -= Math.PI * 2;
+      if (next <= current) next += Math.PI * 2;
+      const leftBoundary = (previous + current) / 2;
+      const rightBoundary = (current + next) / 2;
+      const padding = Math.min((rightBoundary - leftBoundary) * .12, 56 / Math.max(1, node.ringRadius));
+      return {
+        min: Math.min(current, leftBoundary + padding),
+        max: Math.max(current, rightBoundary - padding)
+      };
+    }
+
+    function startNodeDrag(event, node, element) {
+      if (event.button !== undefined && event.button !== 0) return;
+      cancelViewAnimation();
+      event.preventDefault();
+      event.stopPropagation();
+      nodeDrag = {
+        node,
+        element,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        nodeX: node.x,
+        nodeY: node.y,
+        baseAngle: node.ringAngle,
+        angle: node.ringAngle,
+        angleBounds: node.depth > 0 ? getDragAngleBounds(node) : null,
+        moved: false
+      };
+      element.setPointerCapture(event.pointerId);
+      element.classList.add("is-dragging");
+      node.fx = node.x;
+      node.fy = node.y;
+      if (simulation) simulation.alphaTarget(.28).restart();
+    }
+
+    function moveNodeDrag(event) {
+      if (!nodeDrag || event.pointerId !== nodeDrag.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const dx = (event.clientX - nodeDrag.startX) / scale;
+      const dy = (event.clientY - nodeDrag.startY) / scale;
+      if (Math.hypot(dx, dy) > 4 / scale) nodeDrag.moved = true;
+      if (nodeDrag.node.depth === 0) {
+        nodeDrag.node.fx = 0;
+        nodeDrag.node.fy = 0;
+        return;
+      }
+      const desiredX = nodeDrag.nodeX + dx;
+      const desiredY = nodeDrag.nodeY + dy;
+      const desiredAngle = unwrapAngle(Math.atan2(desiredY, desiredX), nodeDrag.baseAngle);
+      const angle = Math.max(nodeDrag.angleBounds.min, Math.min(nodeDrag.angleBounds.max, desiredAngle));
+      nodeDrag.angle = angle;
+      nodeDrag.node.fx = Math.cos(angle) * nodeDrag.node.ringRadius;
+      nodeDrag.node.fy = Math.sin(angle) * nodeDrag.node.ringRadius;
+    }
+
+    function endNodeDrag(event) {
+      if (!nodeDrag || event.pointerId !== nodeDrag.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const { node, element, moved, angle } = nodeDrag;
+      element.classList.remove("is-dragging");
+      if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId);
+      if (node.depth > 0 && moved) {
+        node.ringAngle = angle;
+        node.targetX = Math.cos(angle) * node.ringRadius;
+        node.targetY = Math.sin(angle) * node.ringRadius;
+      }
+      node.fx = node.depth === 0 ? 0 : null;
+      node.fy = node.depth === 0 ? 0 : null;
+      nodeDrag = null;
+      selectNode(node);
+      if (simulation) simulation.alphaTarget(0).alpha(moved ? .42 : .16).restart();
+    }
+
+    function getSiblingNodes(node, parentId = selectedParentId ?? node.layoutParentId) {
+      if (node.depth === 0 || !parentId) return [node];
+      const siblings = [];
+      const seen = new Set();
+      graphEdges.forEach(edge => {
+        let candidate = null;
+        if (edge.source.id === parentId && edge.target.depth === node.depth) candidate = edge.target;
+        if (edge.target.id === parentId && edge.source.depth === node.depth) candidate = edge.source;
+        if (candidate && !seen.has(candidate.id)) {
+          seen.add(candidate.id);
+          siblings.push(candidate);
+        }
+      });
+      if (!seen.has(node.id)) siblings.push(node);
+      return siblings.sort((a, b) => {
+        const angleA = (a.ringAngle + Math.PI * 2) % (Math.PI * 2);
+        const angleB = (b.ringAngle + Math.PI * 2) % (Math.PI * 2);
+        return angleA - angleB;
+      });
+    }
+
+    function selectNode(node, parentContextId = undefined) {
+      selected = node;
+      selectedParentId = parentContextId === undefined ? node.layoutParentId : parentContextId;
+      nodeElements.forEach((element, id) => element.classList.toggle("is-selected", id === node.id));
+      selectionTitle.textContent = node.name;
+      const route = node.path.length ? node.path.join("  →  ") : "尚未走子";
+      selectionPath.textContent = node.arrivals > 1 ? `${route}　·　${node.arrivals} 條路徑抵達此局面` : route;
+      const material = getMaterialSummary(node);
+      whiteCaptures.textContent = formatCaptured(material.takenByWhite, "b");
+      blackCaptures.textContent = formatCaptured(material.takenByBlack, "w");
+      whiteScore.textContent = `${material.whitePoints} 分`;
+      blackScore.textContent = `${material.blackPoints} 分`;
+      const advantage = material.whitePoints - material.blackPoints;
+      materialBalance.textContent = advantage === 0
+        ? "子力平衡"
+        : advantage > 0 ? `白方領先 ${advantage} 分` : `黑方領先 ${Math.abs(advantage)} 分`;
+
+      const nextDepth = node.depth + 1;
+      const nextRingExists = graphNodes.some(candidate => candidate.depth === nextDepth);
+      const sameRingCount = getSiblingNodes(node).length;
+      previousNodeButton.disabled = sameRingCount <= 1;
+      nextNodeButton.disabled = sameRingCount <= 1;
+      previousRingButton.disabled = node.depth === 0;
+      previousRingButton.textContent = node.depth === 0
+        ? "已在中心"
+        : node.depth === 1 ? "回到中心" : `回到第 ${node.depth - 1} 圈`;
+      nextRingButton.disabled = !nextRingExists;
+      nextRingButton.textContent = nextRingExists ? `前往第 ${nextDepth} 圈` : "目前已是最外圈";
+      toggleBranch.hidden = node.legalCount === 0;
+      toggleBranch.disabled = node.expanded || busy;
+      toggleBranch.textContent = node.legalCount === 0
+        ? "此局已結束"
+        : node.expanded ? `已產生 ${node.outgoing} 條連線` : `產生全部 ${node.legalCount} 個相鄰局面`;
+      scheduleVisibilityUpdate();
+    }
+
+    function updateTransform() {
+      scene.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+      zoomValue.textContent = `${Math.round(scale * 100)}%`;
+      viewport.dataset.lod = scale < .18 ? "overview" : "detail";
+      scheduleVisibilityUpdate();
+    }
+
+    function scheduleVisibilityUpdate() {
+      if (visibilityFrame) return;
+      visibilityFrame = requestAnimationFrame(() => {
+        visibilityFrame = 0;
+        const margin = 360;
+        const left = -translateX / scale - margin;
+        const top = -translateY / scale - margin;
+        const right = (viewport.clientWidth - translateX) / scale + margin;
+        const bottom = (viewport.clientHeight - translateY) / scale + margin;
+        const nextVisibleNodeIds = new Set();
+        const nextVisibleNodes = [];
+        const allowHighResolution = !viewport.classList.contains("is-interacting") && !viewAnimation;
+        const pixelRatio = Math.min(3, window.devicePixelRatio || 1);
+        const desiredResolution = Math.max(132, Math.min(768, 88 * scale * pixelRatio));
+
+        graphNodes.forEach(node => {
+          const visible = node.x + nodeWidth / 2 >= left && node.x - nodeWidth / 2 <= right
+            && node.y + nodeHeight / 2 >= top && node.y - nodeHeight / 2 <= bottom;
+          const element = nodeElements.get(node.id);
+          if (element) {
+            const wasVisible = visibleNodeIds.has(node.id);
+            if (!visibilityInitialized || visible !== wasVisible) {
+              element.style.display = visible ? "block" : "none";
+            }
+            if (visible) {
+              nextVisibleNodeIds.add(node.id);
+              nextVisibleNodes.push(node);
+              updateNodePosition(node);
+              const canvas = canvasElements.get(node.id);
+              if (canvas?.dataset.rendered !== "true") drawBoard(canvas, node, 132);
+              if (canvas && allowHighResolution && Math.abs(canvas.width - desiredResolution) >= 16) {
+                drawBoard(canvas, node, desiredResolution);
+              }
+            } else if (wasVisible) {
+              const canvas = canvasElements.get(node.id);
+              if (canvas && canvas.width > 264) {
+                canvas.width = 132;
+                canvas.height = 132;
+                canvas.dataset.rendered = "false";
+              }
+            }
+          }
+        });
+
+        const nextVisibleEdgeIds = new Set();
+        const nextVisibleEdges = [];
+        graphEdges.forEach(edge => {
+          const element = edgeElements.get(edge.id);
+          if (!element) return;
+          const bothEndsVisible = nextVisibleNodeIds.has(edge.source.id) && nextVisibleNodeIds.has(edge.target.id);
+          const touchesSelection = edge.source === selected || edge.target === selected;
+          const visible = bothEndsVisible || touchesSelection;
+          element.classList.toggle("is-active", touchesSelection);
+          if (!visibilityInitialized || visible !== visibleEdgeIds.has(edge.id)) {
+            element.style.display = visible ? "block" : "none";
+          }
+          if (visible) {
+            nextVisibleEdgeIds.add(edge.id);
+            nextVisibleEdges.push(edge);
+            updateEdgePosition(edge);
+          }
+        });
+
+        visibleNodeIds = nextVisibleNodeIds;
+        visibleNodes = nextVisibleNodes;
+        visibleEdgeIds = nextVisibleEdgeIds;
+        visibleEdges = nextVisibleEdges;
+        visibilityInitialized = true;
+      });
+    }
+
+    function cancelViewAnimation() {
+      if (!viewAnimation) return;
+      cancelAnimationFrame(viewAnimation);
+      viewAnimation = 0;
+      scheduleVisibilityUpdate();
+    }
+
+    function focusNode(node, targetScale = .46) {
+      cancelViewAnimation();
+      scale = Math.max(.26, Math.min(2.4, targetScale));
+      translateX = viewport.clientWidth / 2 - node.x * scale;
+      translateY = viewport.clientHeight / 2 - node.y * scale;
+      updateTransform();
+    }
+
+    function animateToNode(node, targetScale = .68) {
+      cancelViewAnimation();
+      const finalScale = Math.max(.26, Math.min(2.4, targetScale));
+      if (reducedMotion.matches) {
+        focusNode(node, finalScale);
+        return;
+      }
+
+      const startView = [
+        (viewport.clientWidth / 2 - translateX) / scale,
+        (viewport.clientHeight / 2 - translateY) / scale,
+        viewport.clientWidth / scale
+      ];
+      const endView = [node.x, node.y, viewport.clientWidth / finalScale];
+      const interpolate = d3.interpolateZoom(startView, endView);
+      const duration = Math.max(520, Math.min(900, interpolate.duration * .52));
+      const startedAt = performance.now();
+
+      function step(now) {
+        const progress = Math.min(1, (now - startedAt) / duration);
+        const [centerX, centerY, visibleWidth] = interpolate(d3.easeCubicInOut(progress));
+        scale = viewport.clientWidth / visibleWidth;
+        translateX = viewport.clientWidth / 2 - centerX * scale;
+        translateY = viewport.clientHeight / 2 - centerY * scale;
+        updateTransform();
+        if (progress < 1) {
+          viewAnimation = requestAnimationFrame(step);
+        } else {
+          viewAnimation = 0;
+          scheduleVisibilityUpdate();
+        }
+      }
+      viewAnimation = requestAnimationFrame(step);
+    }
+
+    function graphBounds() {
+      return {
+        minX: Math.min(...graphNodes.map(node => node.x - nodeWidth / 2)),
+        maxX: Math.max(...graphNodes.map(node => node.x + nodeWidth / 2)),
+        minY: Math.min(...graphNodes.map(node => node.y - nodeHeight / 2)),
+        maxY: Math.max(...graphNodes.map(node => node.y + nodeHeight / 2))
+      };
+    }
+
+    function fitView() {
+      cancelViewAnimation();
+      const bounds = graphBounds();
+      const padding = 34;
+      const width = bounds.maxX - bounds.minX;
+      const height = bounds.maxY - bounds.minY;
+      scale = Math.max(.06, Math.min(1, (viewport.clientWidth - padding * 2) / width, (viewport.clientHeight - padding * 2) / height));
+      translateX = (viewport.clientWidth - width * scale) / 2 - bounds.minX * scale;
+      translateY = (viewport.clientHeight - height * scale) / 2 - bounds.minY * scale;
+      updateTransform();
+    }
+
+    function zoomAt(nextScale, clientX, clientY) {
+      cancelViewAnimation();
+      const rect = viewport.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const worldX = (x - translateX) / scale;
+      const worldY = (y - translateY) / scale;
+      scale = Math.max(.06, Math.min(3.2, nextScale));
+      translateX = x - worldX * scale;
+      translateY = y - worldY * scale;
+      updateTransform();
+    }
+
+    function jumpToRing(targetDepth) {
+      if (targetDepth < 0) return;
+      const origin = selected;
+      let candidates = graphEdges.flatMap(edge => {
+        if (edge.source === selected && edge.target.depth === targetDepth) return [edge.target];
+        if (edge.target === selected && edge.source.depth === targetDepth) return [edge.source];
+        return [];
+      });
+      if (!candidates.length) candidates = graphNodes.filter(node => node.depth === targetDepth);
+      if (!candidates.length) return;
+
+      const referenceAngle = selected.depth === 0 ? 0 : selected.ringAngle;
+      const target = candidates.reduce((nearest, candidate) =>
+        angularDistance(candidate.ringAngle, referenceAngle) < angularDistance(nearest.ringAngle, referenceAngle)
+          ? candidate
+          : nearest
+      );
+      const parentContextId = targetDepth > origin.depth ? origin.id : target.layoutParentId;
+      selectNode(target, parentContextId);
+      animateToNode(target, Math.max(scale, .68));
+    }
+
+    function jumpToNextRing() {
+      jumpToRing(selected.depth + 1);
+    }
+
+    function jumpToPreviousRing() {
+      jumpToRing(selected.depth - 1);
+    }
+
+    function jumpWithinRing(direction) {
+      const parentContextId = selectedParentId;
+      const ringNodes = getSiblingNodes(selected, parentContextId);
+      if (ringNodes.length <= 1) return;
+      const currentIndex = ringNodes.indexOf(selected);
+      const targetIndex = (currentIndex + direction + ringNodes.length) % ringNodes.length;
+      const target = ringNodes[targetIndex];
+      selectNode(target, parentContextId);
+      animateToNode(target, Math.max(scale, .9));
+    }
+
+    async function expandOne(node) {
+      if (busy || node.expanded || node.legalCount === 0) return;
+      busy = true;
+      selectNode(node);
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      generateConnections(node);
+      renderGraph();
+      restartSimulation(1);
+      selectNode(node);
+      focusNode(node, Math.max(scale, .44));
+      busy = false;
+      expandFrontierButton.disabled = false;
+    }
+
+    async function expandFrontier() {
+      if (busy) return;
+      busy = true;
+      expandFrontierButton.disabled = true;
+      expandFrontierButton.textContent = "正在擴展…";
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const frontier = graphNodes.filter(node => !node.expanded && node.legalCount > 0);
+      const startingCount = graphNodes.length;
+      let processed = 0;
+      for (const node of frontier) {
+        generateConnections(node);
+        processed++;
+        if (graphNodes.length - startingCount >= 450 || processed >= 28) break;
+      }
+      renderGraph();
+      restartSimulation(1);
+      selectNode(selected);
+      focusNode(selected, Math.max(scale, .4));
+      busy = false;
+      expandFrontierButton.disabled = false;
+      expandFrontierButton.textContent = `批次擴展前沿（目前 ${graphNodes.length} 節點）`;
+    }
+
+    const initialChess = new Chess();
+    const root = createNode({
+      fen: initialChess.fen(),
+      name: "初始局面 · 白方先行",
+      move: "起點",
+      path: [],
+      depth: 0,
+      last: [],
+      x: 0,
+      y: 0
+    });
+    selected = root;
+    generateConnections(root);
+    [...graphNodes].filter(node => node.depth === 1).forEach(generateConnections);
+    renderGraph();
+    restartSimulation(1);
+    selectNode(root);
+    expandFrontierButton.textContent = `批次擴展前沿（目前 ${graphNodes.length} 節點）`;
+    requestAnimationFrame(() => focusNode(root, .42));
+
+    toggleBranch.addEventListener("click", () => expandOne(selected));
+    previousNodeButton.addEventListener("click", () => jumpWithinRing(-1));
+    nextNodeButton.addEventListener("click", () => jumpWithinRing(1));
+    previousRingButton.addEventListener("click", jumpToPreviousRing);
+    nextRingButton.addEventListener("click", jumpToNextRing);
+    expandFrontierButton.addEventListener("click", expandFrontier);
+    document.getElementById("fitView").addEventListener("click", fitView);
+    document.getElementById("zoomIn").addEventListener("click", () => {
+      const rect = viewport.getBoundingClientRect();
+      zoomAt(scale * 1.18, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    });
+    document.getElementById("zoomOut").addEventListener("click", () => {
+      const rect = viewport.getBoundingClientRect();
+      zoomAt(scale / 1.18, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    });
+    viewport.addEventListener("wheel", event => {
+      event.preventDefault();
+      viewport.classList.add("is-interacting");
+      clearTimeout(interactionTimer);
+      interactionTimer = setTimeout(() => {
+        viewport.classList.remove("is-interacting");
+        scheduleVisibilityUpdate();
+      }, 130);
+      zoomAt(scale * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY);
+    }, { passive: false });
+    viewport.addEventListener("pointerdown", event => {
+      if (event.target.closest(".node")) return;
+      cancelViewAnimation();
+      drag = { x: event.clientX, y: event.clientY, tx: translateX, ty: translateY };
+      viewport.setPointerCapture(event.pointerId);
+      viewport.classList.add("is-dragging");
+      viewport.classList.add("is-interacting");
+    });
+    viewport.addEventListener("pointermove", event => {
+      if (!drag) return;
+      translateX = drag.tx + event.clientX - drag.x;
+      translateY = drag.ty + event.clientY - drag.y;
+      updateTransform();
+    });
+    function stopDrag() {
+      drag = null;
+      viewport.classList.remove("is-dragging");
+      viewport.classList.remove("is-interacting");
+      scheduleVisibilityUpdate();
+    }
+    viewport.addEventListener("pointerup", stopDrag);
+    viewport.addEventListener("pointercancel", stopDrag);
+    colorScheme.addEventListener("change", () => {
+      visibleNodes.forEach(node => {
+        const canvas = canvasElements.get(node.id);
+        if (canvas) canvas.dataset.rendered = "false";
+      });
+      scheduleVisibilityUpdate();
+    });
+    let resizeTimer;
+    window.addEventListener("resize", () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => focusNode(selected, scale), 100);
+    });
+  </script>
+</body>
+</html>
